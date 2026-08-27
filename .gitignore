@@ -1,0 +1,43 @@
+# Virtual environment
+venv/
+.venv/
+env/
+
+# Python bytecode / cache
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+.eggs/
+
+# PyInstaller
+*.spec
+
+# Testing
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Editors / IDEs
+.vscode/
+.idea/
+*.swp
+*.bak
+
+# OS cruft
+.DS_Store
+Thumbs.db
+
+# Local config (should never live in-repo)
+recipe_scribe_qt.conf
+
+# Packaging staging / notes
+/Archive
+/staging
+packaging_notes.txt
+
+recipe-scribe-qt-project-plan.md
