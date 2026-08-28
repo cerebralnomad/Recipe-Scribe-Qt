@@ -3,7 +3,8 @@
 main.py
 
 Entry point for Recipe Scribe Qt. Sets up the QApplication, loads config,
-and launches the main recipe entry window.
+applies the theme, and launches the AppShell (which hosts the recipe
+entry and search pages).
 """
 
 import sys
@@ -12,7 +13,7 @@ from PyQt6.QtWidgets import QApplication
 
 from config import AppConfig
 from theme import apply_theme
-from windows.main_window import MainWindow
+from windows.app_shell import AppShell
 
 
 def main() -> int:
@@ -27,9 +28,12 @@ def main() -> int:
     # app's behavior, rather than attempting a live palette swap.
     apply_theme(app, config.dark_mode)
 
-    window = MainWindow(config)
-    window.resize(1000, 700)
-    window.show()
+    shell = AppShell(config)
+    if config.start_fullscreen:
+        shell.showFullScreen()
+    else:
+        shell.resize(1000, 700)
+        shell.show()
 
     return app.exec()
 

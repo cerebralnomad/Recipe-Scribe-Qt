@@ -4,26 +4,26 @@ windows/main_window.py
 The recipe entry page: Title / Category / Ingredients / Directions, with
 File (New/Save/Quit) and Config menu actions.
 
-This is a standalone QMainWindow for now, runnable and testable on its
-own. When the QStackedWidget navigation shell is introduced later (see
-project plan §9), the menu-building and central-widget logic here gets
-lifted into a page the shell can swap in alongside the search page - the
-widget layout and public method names (new_recipe, save_recipe, the
-title/category/ingredients/directions attributes) are designed to stay
-stable through that refactor.
+As anticipated when this module was first written, it's now a QWidget
+("page") rather than a standalone QMainWindow, so AppShell
+(windows/app_shell.py) can host it inside a QStackedWidget alongside the
+search page and share one menu bar between the two. Nothing about the
+central layout or the public method names (new_recipe, save_recipe, the
+title/category/ingredients/directions attributes) changed in this
+refactor - only the menu-building and top-level window plumbing moved.
 
 Note on saved file layout: a blank line is written before the title, ahead
 of Title / Ingredients / Directions each being separated by a single blank
-line. This is intentional (not carried over by accident) - it keeps the
-title from sitting flush against the top edge of the screen when recipes
-are viewed on small displays, e.g. a 7" screen in the kitchen. The
-Category footer is appended separately by categories.attach_category().
+line. This is intentional - it keeps the title from sitting flush against
+the top edge of the screen when recipes are viewed on small displays, e.g.
+a 7" screen in the kitchen. The Category footer is appended separately by
+categories.attach_category().
 """
 
 from __future__ import annotations
 
 import os
-from typing import Optional
+from typing import Callable, Optional
 
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
@@ -31,10 +31,9 @@ from PyQt6.QtWidgets import (
     QFileDialog,
     QGridLayout,
     QGroupBox,
-    QInputDialog,
     QLabel,
     QLineEdit,
-    QMainWindow,
+    QMenuBar,
     QMessageBox,
     QPlainTextEdit,
     QVBoxLayout,
@@ -44,28 +43,51 @@ from PyQt6.QtWidgets import (
 from config import AppConfig
 from categories import attach_category
 from formatting import format_directions, format_filename, format_ingredients
+from windows.about_window import AboutWindow
+from windows.config_dialogs import (
+    ManageCategoriesDialog,
+    prompt_dark_mode,
+    prompt_format_filename,
+    prompt_set_default_save_path,
+    prompt_start_fullscreen,
+    prompt_use_bullet_points,
+)
+from windows.help_window import HelpWindow
 
 
-class MainWindow(QMainWindow):
-    """The recipe entry window."""
+class RecipeEntryPage(QWidget):
+    """
+    The recipe entry page.
 
-    def __init__(self, config: AppConfig, parent: Optional[QWidget] = None):
+    `on_search_requested`, if given, is called when the user chooses
+    "Search Recipes" from the menu - AppShell wires this to switch the
+    QStackedWidget to the search page.
+    """
+
+    def __init__(
+        self,
+        config: AppConfig,
+        on_search_requested: Optional[Callable[[], None]] = None,
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
         self.config = config
+        self.on_search_requested = on_search_requested
 
-        self.setWindowTitle("Recipe Scribe")
-        self._build_menu_bar()
-        self._build_central_widget()
+        self._build_ui()
         self._apply_tab_order()
         self.title_entry.setFocus()
 
     # ------------------------------------------------------------------
-    # Menu bar
+    # Menu bar (installed by the shell into its shared QMenuBar)
     # ------------------------------------------------------------------
 
-    def _build_menu_bar(self) -> None:
-        menu_bar = self.menuBar()
-
+    def install_menu(self, menu_bar: QMenuBar) -> None:
+        """
+        Populates a shared QMenuBar with this page's menu structure.
+        AppShell calls this each time it switches to this page, after
+        clearing whatever the previous page installed.
+        """
         file_menu = menu_bar.addMenu("&File")
 
         new_action = QAction("New", self)
@@ -82,46 +104,85 @@ class MainWindow(QMainWindow):
 
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence("Ctrl+Q"))
-        quit_action.triggered.connect(self.close)
+        quit_action.triggered.connect(lambda: self.window().close())
         file_menu.addAction(quit_action)
 
-        # Config menu: full dialogs (path picker, bullet/format/dark-mode
-        # toggles, category list management) land in config_dialogs.py in
-        # a later step. These two actions are wired to minimal working
-        # behavior now so the save path and category-adding flows are
-        # usable in the meantime, and will be swapped for the richer
-        # dialogs without changing this menu's structure.
         config_menu = menu_bar.addMenu("&Config")
 
         set_path_action = QAction("Set Default Save Path", self)
-        set_path_action.triggered.connect(self.set_default_save_path)
+        set_path_action.triggered.connect(self._set_default_save_path)
         config_menu.addAction(set_path_action)
 
+        config_menu.addSeparator()
+
+        self.bullet_points_action = QAction("", self)
+        self.bullet_points_action.triggered.connect(self._prompt_bullet_points)
+        config_menu.addAction(self.bullet_points_action)
+
+        self.filename_format_action = QAction("", self)
+        self.filename_format_action.triggered.connect(self._prompt_filename_format)
+        config_menu.addAction(self.filename_format_action)
+
+        self.dark_mode_action = QAction("", self)
+        self.dark_mode_action.triggered.connect(self._prompt_dark_mode)
+        config_menu.addAction(self.dark_mode_action)
+
+        self.fullscreen_action = QAction("", self)
+        self.fullscreen_action.triggered.connect(self._prompt_fullscreen)
+        config_menu.addAction(self.fullscreen_action)
+
+        config_menu.addSeparator()
+
         manage_categories_action = QAction("Manage Categories", self)
-        manage_categories_action.triggered.connect(self.manage_categories)
+        manage_categories_action.triggered.connect(self._manage_categories)
         config_menu.addAction(manage_categories_action)
+
+        self._refresh_toggle_labels()
 
         help_menu = menu_bar.addMenu("&Help")
 
         help_action = QAction("Program Help", self)
         help_action.setShortcut(QKeySequence("Ctrl+H"))
+        help_action.triggered.connect(self._show_help)
         help_menu.addAction(help_action)
 
         about_action = QAction("About", self)
+        about_action.triggered.connect(self._show_about)
         help_menu.addAction(about_action)
 
-        # Placeholder - wired to the QStackedWidget shell once it exists.
-        menu_bar.addAction("Search Recipes")
+        search_action = QAction("Search Recipes", self)
+        search_action.triggered.connect(self._request_search)
+        menu_bar.addAction(search_action)
+
+    def _request_search(self) -> None:
+        if self.on_search_requested is not None:
+            self.on_search_requested()
+
+    def _refresh_toggle_labels(self) -> None:
+        """
+        Updates the Config menu's toggle labels to show the current
+        value, e.g. "Use Bullet Points (True)". Three of the four toggles
+        restart the program immediately on change, so in practice this
+        only needs to run once at startup for those - but fullscreen
+        doesn't restart, so its label is refreshed after every change too.
+        """
+        self.bullet_points_action.setText(
+            f"Use Bullet Points ({self.config.use_bullet_points})"
+        )
+        self.filename_format_action.setText(
+            f"Format Filename ({self.config.format_filename})"
+        )
+        self.dark_mode_action.setText(f"Use Dark Mode ({self.config.dark_mode})")
+        self.fullscreen_action.setText(
+            f"Start Fullscreen ({self.config.start_fullscreen})"
+        )
 
     # ------------------------------------------------------------------
     # Central widget
     # ------------------------------------------------------------------
 
-    def _build_central_widget(self) -> None:
-        central = QWidget(self)
-        self.setCentralWidget(central)
-
-        layout = QGridLayout(central)
+    def _build_ui(self) -> None:
+        layout = QGridLayout(self)
 
         title_label = QLabel("Recipe Title")
         self.title_entry = QLineEdit()
@@ -259,19 +320,52 @@ class MainWindow(QMainWindow):
         return "\n".join(parts)
 
     # ------------------------------------------------------------------
-    # Config menu actions (minimal working behavior for now - see
-    # config_dialogs.py in a later build step for the full dialogs)
+    # Config menu actions
     # ------------------------------------------------------------------
 
-    def set_default_save_path(self) -> None:
-        path = QFileDialog.getExistingDirectory(self, "Select Default Save Path")
-        if path:
-            self.config.save_path = path
-            self.config.save()
+    def _set_default_save_path(self) -> None:
+        prompt_set_default_save_path(self, self.config)
 
-    def manage_categories(self) -> None:
-        name, ok = QInputDialog.getText(self, "Add Category", "New category name:")
-        if ok and name.strip():
-            if self.config.add_category(name.strip()):
-                self.config.save()
-                self.category_combo.addItem(name.strip())
+    def _prompt_bullet_points(self) -> None:
+        prompt_use_bullet_points(self, self.config)
+        # Unreachable in practice: prompt_use_bullet_points restarts the
+        # process on any actual change via apply_and_restart(). Only a
+        # Cancel returns control here, so there's nothing to refresh.
+
+    def _prompt_filename_format(self) -> None:
+        prompt_format_filename(self, self.config)
+
+    def _prompt_dark_mode(self) -> None:
+        prompt_dark_mode(self, self.config)
+
+    def _prompt_fullscreen(self) -> None:
+        prompt_start_fullscreen(self, self.config)
+        # Fullscreen doesn't restart the process, so its label needs an
+        # explicit refresh to reflect the new value immediately.
+        self._refresh_toggle_labels()
+
+    def _manage_categories(self) -> None:
+        dialog = ManageCategoriesDialog(self.config, self)
+        if dialog.exec() == dialog.DialogCode.Accepted:
+            self.refresh_category_widgets()
+
+    def refresh_category_widgets(self) -> None:
+        """
+        Repopulates the category dropdown after the known list changes.
+        Called internally after Manage Categories, and by AppShell when
+        switching back to this page in case categories changed elsewhere.
+        """
+        current_text = self.category_combo.currentText()
+        self.category_combo.clear()
+        self.category_combo.addItems(self.config.categories)
+        self.category_combo.setCurrentText(current_text)
+
+    # ------------------------------------------------------------------
+    # Help / About
+    # ------------------------------------------------------------------
+
+    def _show_help(self) -> None:
+        HelpWindow(self).exec()
+
+    def _show_about(self) -> None:
+        AboutWindow(self).exec()

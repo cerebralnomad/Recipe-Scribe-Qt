@@ -6,9 +6,9 @@ Content / Both) and a category filter, results list on the left, and a
 recipe display/edit pane on the right - wired to search.py and
 categories.py.
 
-Like main_window.py, this is a standalone QMainWindow for now. The
-"Create New Recipe" menu action is a placeholder until the QStackedWidget
-navigation shell (project plan §9) wires the two pages together.
+Like main_window.py, this is now a QWidget "page" (rather than a
+standalone QMainWindow) so AppShell can host it inside a QStackedWidget
+alongside the recipe entry page, sharing one menu bar between the two.
 
 Design note on editing: the category is shown and changed via its own
 QComboBox in the edit pane, not as inline "Category:" text in the body
@@ -20,7 +20,7 @@ used on the recipe entry page.
 
 from __future__ import annotations
 
-from typing import Dict, Optional
+from typing import Callable, Dict, Optional
 
 from PyQt6.QtGui import QAction, QKeySequence
 from PyQt6.QtWidgets import (
@@ -32,7 +32,7 @@ from PyQt6.QtWidgets import (
     QLineEdit,
     QListWidget,
     QListWidgetItem,
-    QMainWindow,
+    QMenuBar,
     QMessageBox,
     QPlainTextEdit,
     QPushButton,
@@ -50,43 +50,59 @@ _ALL_CATEGORIES = "All Categories"
 _SCOPE_LABELS = {"Title": "title", "Content": "content", "Both": "both"}
 
 
-class SearchWindow(QMainWindow):
-    """The recipe search/browse window."""
+class RecipeSearchPage(QWidget):
+    """
+    The recipe search/browse page.
 
-    def __init__(self, config: AppConfig, parent: Optional[QWidget] = None):
+    `on_new_recipe_requested`, if given, is called when the user chooses
+    "Create New Recipe" from the menu - AppShell wires this to switch the
+    QStackedWidget back to the recipe entry page.
+    """
+
+    def __init__(
+        self,
+        config: AppConfig,
+        on_new_recipe_requested: Optional[Callable[[], None]] = None,
+        parent: Optional[QWidget] = None,
+    ):
         super().__init__(parent)
         self.config = config
+        self.on_new_recipe_requested = on_new_recipe_requested
         self._results_by_row: Dict[int, SearchResult] = {}
         self._current_result: Optional[SearchResult] = None
 
-        self.setWindowTitle("Recipe Search")
-        self._build_menu_bar()
-        self._build_central_widget()
+        self._build_ui()
         self.search_entry.setFocus()
 
     # ------------------------------------------------------------------
-    # Menu bar
+    # Menu bar (installed by the shell into its shared QMenuBar)
     # ------------------------------------------------------------------
 
-    def _build_menu_bar(self) -> None:
-        menu_bar = self.menuBar()
-
-        # Placeholder - wired to the QStackedWidget shell once it exists.
-        menu_bar.addAction("Create New Recipe")
+    def install_menu(self, menu_bar: QMenuBar) -> None:
+        """
+        Populates a shared QMenuBar with this page's menu structure.
+        AppShell calls this each time it switches to this page, after
+        clearing whatever the previous page installed.
+        """
+        new_recipe_action = QAction("Create New Recipe", self)
+        new_recipe_action.triggered.connect(self._request_new_recipe)
+        menu_bar.addAction(new_recipe_action)
 
         quit_action = QAction("Quit", self)
         quit_action.setShortcut(QKeySequence("Ctrl+Q"))
-        quit_action.triggered.connect(self.close)
+        quit_action.triggered.connect(lambda: self.window().close())
         menu_bar.addAction(quit_action)
+
+    def _request_new_recipe(self) -> None:
+        if self.on_new_recipe_requested is not None:
+            self.on_new_recipe_requested()
 
     # ------------------------------------------------------------------
     # Central widget
     # ------------------------------------------------------------------
 
-    def _build_central_widget(self) -> None:
-        central = QWidget(self)
-        self.setCentralWidget(central)
-        outer_layout = QVBoxLayout(central)
+    def _build_ui(self) -> None:
+        outer_layout = QVBoxLayout(self)
 
         outer_layout.addLayout(self._build_search_controls())
 
@@ -166,6 +182,23 @@ class SearchWindow(QMainWindow):
         layout.setColumnStretch(1, 1)
         return group
 
+    def refresh_category_widgets(self) -> None:
+        """
+        Repopulates both category dropdowns (filter and edit) from the
+        current config. Called by AppShell after categories are added,
+        renamed, or removed via the recipe entry page's Config menu, so
+        both pages stay in sync without needing separate config objects.
+        """
+        current_filter = self.category_filter_combo.currentText()
+        self._refresh_category_filter_items()
+        if current_filter and current_filter != _ALL_CATEGORIES:
+            self.category_filter_combo.setCurrentText(current_filter)
+
+        current_edit = self.edit_category_combo.currentText()
+        self.edit_category_combo.clear()
+        self.edit_category_combo.addItems(self.config.categories)
+        self.edit_category_combo.setCurrentText(current_edit)
+
     def _refresh_category_filter_items(self) -> None:
         self.category_filter_combo.clear()
         self.category_filter_combo.addItem(_ALL_CATEGORIES)
@@ -198,7 +231,7 @@ class SearchWindow(QMainWindow):
 
         self._populate_results(results)
 
-    def _populate_results(self, results: list[SearchResult]) -> None:
+    def _populate_results(self, results: list) -> None:
         self.results_list.clear()
         self._results_by_row.clear()
         self._clear_display()
