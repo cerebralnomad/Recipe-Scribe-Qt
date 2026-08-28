@@ -1,0 +1,59 @@
+# TESTING ONLY - com.cerebralnomad.recipescribe-qt.yml
+#
+# Differs from the real submission manifest in two ways:
+#   1. App ID is com.cerebralnomad.recipescribe-qt (hyphen in the last
+#      component only, which Flatpak allows) so this coexists with the
+#      installed Tkinter version (com.cerebralnomad.recipescribe) instead
+#      of replacing it.
+#   2. Source is `type: dir` pointing at the local checkout instead of a
+#      hosted release archive, so you can test-build directly from your
+#      working tree without cutting a GitHub release first.
+#
+# To use: place this file at the repo root (next to src/, icons/, and the
+# matching com.cerebralnomad.recipescribe-qt.desktop /
+# com.cerebralnomad.recipescribe-qt.metainfo.xml test files - names differ
+# from the real ones so nothing gets overwritten), then run:
+#
+#   flatpak-builder --user --install --force-clean builddir \
+#       com.cerebralnomad.recipescribe-qt.yml
+#
+# --user avoids touching a system-wide install of the real app if that's
+# how the Tkinter version is currently installed.
+
+id: com.cerebralnomad.recipescribe-qt
+runtime: org.kde.Platform
+runtime-version: '6.10'
+sdk: org.kde.Sdk
+base: com.riverbankcomputing.PyQt.BaseApp
+base-version: '6.10'
+command: recipe_scribe_qt
+
+cleanup-commands:
+  - /app/cleanup-BaseApp.sh
+
+build-options:
+  env:
+    - BASEAPP_REMOVE_WEBENGINE=1
+
+finish-args:
+  - --filesystem=home:rw
+  - --socket=wayland
+  - --socket=fallback-x11
+  - --share=ipc
+
+modules:
+  - name: recipescribe-qt
+    buildsystem: simple
+    build-commands:
+      - mkdir -p /app/bin/windows /app/bin/resources
+      - install -Dm755 src/main.py /app/bin/recipe_scribe_qt
+      - cp src/config.py src/formatting.py src/categories.py src/search.py src/theme.py /app/bin/
+      - cp src/windows/*.py /app/bin/windows/
+      - cp src/resources/*.py /app/bin/resources/
+      - install -D com.cerebralnomad.recipescribe-qt.metainfo.xml /app/share/metainfo/com.cerebralnomad.recipescribe-qt.metainfo.xml
+      - install -D com.cerebralnomad.recipescribe-qt.desktop /app/share/applications/com.cerebralnomad.recipescribe-qt.desktop
+      - install -Dm644 icons/rc_128.png /app/share/icons/hicolor/128x128/apps/com.cerebralnomad.recipescribe-qt.png
+      - install -Dm644 icons/rc_256.png /app/share/icons/hicolor/256x256/apps/com.cerebralnomad.recipescribe-qt.png
+    sources:
+      - type: dir
+        path: .

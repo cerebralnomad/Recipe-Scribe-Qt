@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- TESTING ONLY - matches the temporary com.cerebralnomad.recipescribe-qt
+     app ID used for local build testing. Use the real metainfo.xml
+     (one level up) for the actual Flathub submission. -->
+<component type="desktop-application">
+  <id>com.cerebralnomad.recipescribe-qt</id>
+  <content_rating type="oars-1.0" />
+
+  <name>Recipe Scribe Qt (Testing)</name>
+  <summary>A program for writing recipes - local test build</summary>
+
+  <metadata_license>CC0-1.0</metadata_license>
+  <project_license>GPL-3.0</project_license>
+
+  <developer id="com.github.cerebralnomad">
+          <name>Recipe Scribe</name>
+  </developer>
+
+  <url type="homepage">https://github.com/cerebralnomad/Recipe-Scribe-Qt</url>
+
+  <description>
+    <p>Local test build - not for distribution.</p>
+  </description>
+
+  <releases>
+    <release version="3.0.0-test" date="2026-08-28">
+      <description>
+        <p>Local test build.</p>
+      </description>
+    </release>
+  </releases>
+
+  <provides>
+    <binary>recipe_scribe_qt</binary>
+  </provides>
+
+  <launchable type="desktop-id">com.cerebralnomad.recipescribe-qt.desktop</launchable>
+  <icon type="stock">com.cerebralnomad.recipescribe-qt</icon>
+
+  <categories>
+    <category>Utility</category>
+  </categories>
+
+</component>
