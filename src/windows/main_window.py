@@ -219,9 +219,13 @@ class RecipeEntryPage(QWidget):
         dir_layout.addWidget(self.directions_edit)
         layout.addWidget(dir_group, 1, 2, 1, 2)
 
+        # Directions lines tend to run much longer than ingredient lines,
+        # so the directions column gets twice the stretch weight -
+        # roughly a 1/3 (ingredients) to 2/3 (directions) split, matching
+        # the original Tkinter layout.
         layout.setRowStretch(1, 1)
         layout.setColumnStretch(1, 1)
-        layout.setColumnStretch(3, 1)
+        layout.setColumnStretch(3, 2)
 
     def _apply_tab_order(self) -> None:
         self.setTabOrder(self.title_entry, self.category_combo)
