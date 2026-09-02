@@ -213,3 +213,90 @@ def test_category_changes_persist_across_save_and_reload(tmp_path):
     assert "Lunch" not in reloaded.categories
     assert "Main Course" in reloaded.categories
     assert "Dinner" not in reloaded.categories
+
+
+# ----------------------------------------------------------------------
+# Comment-line / round-trip corruption regression
+#
+# configparser treats ':' and '=' as key/value delimiters even inside a
+# bare "no value" option name. A comment line containing either character
+# (e.g. "(default: True)") gets silently rewritten on the very next
+# read-then-save cycle, no longer matches the original string, and gets
+# re-added as a duplicate - which crashes on the cycle after that with
+# a real DuplicateOptionError. This exact bug reached a real user via the
+# dark-mode restart flow (every restart is a read-then-save cycle) before
+# being caught here.
+# ----------------------------------------------------------------------
+
+def test_comment_lines_contain_no_delimiter_characters():
+    """
+    Guards against ever reintroducing ':' or '=' in a comment line, since
+    both are configparser's key/value delimiters and corrupt a bare-option
+    comment line on a read/write round trip.
+    """
+    from config import _COMMENT_LINES
+
+    for line in _COMMENT_LINES:
+        assert ":" not in line, f"Comment line contains ':': {line!r}"
+        assert "=" not in line, f"Comment line contains '=': {line!r}"
+
+
+def test_many_repeated_load_save_cycles_do_not_corrupt_comments(tmp_path):
+    """
+    Regression test for the exact real-world crash: every restart after a
+    dark-mode/bullet-point/filename-format toggle is a read-then-save
+    cycle. This simulates 20 such cycles (the original bug surfaced by
+    the third) and confirms the Comments section never grows or
+    duplicates.
+    """
+    path = str(tmp_path / "cycle_test.conf")
+
+    for _ in range(20):
+        config = AppConfig(config_path=path)
+        config.load()  # must never raise
+        config.dark_mode = not config.dark_mode
+        config.save()
+
+    final_config = AppConfig(config_path=path)
+    final_config.load()
+
+    from config import _COMMENT_LINES
+
+    with open(path) as f:
+        contents = f.read()
+    comments_section = contents.split("[Comments]")[1].split("[DefaultSavePath]")[0]
+    comment_line_count = len(
+        [line for line in comments_section.splitlines() if line.strip()]
+    )
+    assert comment_line_count == len(_COMMENT_LINES)
+
+
+def test_corrupted_config_file_recovers_instead_of_crashing(tmp_path):
+    """
+    If the on-disk file is unparseable for any reason (this bug, a bad
+    manual edit, a crash mid-write), load() must recover with fresh
+    defaults rather than raising and taking down the whole app on launch.
+    """
+    path = tmp_path / "corrupted.conf"
+    path.write_text(
+        "[Comments]\n"
+        "# The options can be changed from the GUI\n"
+        "# If editing this file directly = \n"
+        "# If editing this file directly:\n"
+        "\n"
+        "[DefaultSavePath]\n"
+        "save_path = /home/user/Recipes\n"
+    )
+
+    config = AppConfig(config_path=str(path))
+    config.load()  # must not raise
+
+    # Recovered to fresh defaults rather than crashing.
+    assert config.save_path is None
+    assert config.use_bullet_points is True
+    assert config.categories == DEFAULT_CATEGORIES
+
+    # The file on disk is now valid and reloadable.
+    reloaded = AppConfig(config_path=str(path))
+    reloaded.load()
+    assert reloaded.save_path is None
