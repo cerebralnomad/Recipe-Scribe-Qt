@@ -42,3 +42,5 @@ packaging_notes.txt
 
 recipe-scribe-qt-project-plan.md
 recipe_scribe_venv.tar.gz
+recipe-scribe-qt-test.flatpak
+repo/

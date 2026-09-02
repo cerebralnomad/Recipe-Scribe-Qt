@@ -1,24 +1,12 @@
 # This is an in-place toolkit swap: same app ID as the Tkinter version, so
 # Flathub treats this as an update rather than a new listing.
 #
-# NOTE on finish-args: these differ from the Tkinter version's manifest
-# (which only requested --socket=x11) - see the accompanying discussion
-# for why, and note that under Flathub's current policy, ANY change to
-# static permissions (including a low-risk swap like this one) is flagged
-# for manual review, not just permissions that grant something new or
-# sensitive. Budget for a review cycle on this update as a result.
-#
-# Runtime note: rather than manually pip-vendoring PyQt6 (which would mean
-# pre-fetching and pinning every wheel by hand, since flatpak-builder has
-# no network access during the build), this uses Riverbank Computing's
-# own official PyQt BaseApp, which already provides a prebuilt PyQt6 on
-# top of a matching org.kde.Platform runtime. This is the same mechanism
-# used by most PyQt/PySide apps on Flathub.
-#
-# Runtime/BaseApp versions (6.10) reflect what's currently maintained as
-# of this writing - check https://github.com/flathub/com.riverbankcomputing.PyQt.BaseApp
-# for the current maintained branch list before building, since these
-# bump periodically and an EOL branch will fail CI.
+# Note on finish-args: these differ from the Tkinter version's manifest
+# (which only requested --socket=x11) 
+# The original Tkinter version failed to run on Wayland. 
+# The cause was eventually found and corrected, but with the complete rewrite
+# I felt it was time to add Wayland support
+# No new permissions have been added
 
 id: com.cerebralnomad.recipescribe
 runtime: org.kde.Platform
